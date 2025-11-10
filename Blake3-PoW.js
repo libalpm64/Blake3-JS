@@ -280,8 +280,10 @@ class Blake3 {
         if (response.ok && result.verified) {
           if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
           setTimeout(() => {
-            console.log('Reloading page to use the new cookie...');
-            window.location.reload();
+            console.log('Refreshing to use the new cookie...');
+            const url = new URL(window.location.href);
+            url.searchParams.set('_t', Date.now());
+            window.location.replace(url.toString());
           }, 2000);
         } else {
           console.error('Verification failed:', result);
