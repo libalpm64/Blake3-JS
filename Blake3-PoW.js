@@ -281,7 +281,7 @@ class Blake3 {
           console.log('Verification result:', result);
           
           if (result.verified) {
-            if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
+            if (ui.status) ui.status.textContent = 'Verification successful. Redirecting....';
             setTimeout(() => {
               console.log('Refreshing to use the new cookie...');
               const url = new URL(window.location.href);
