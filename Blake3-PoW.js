@@ -225,33 +225,16 @@ class Blake3 {
       function terminateAll() {
         workers.forEach(w => { try { w.terminate(); } catch (_) {} });
       }
+      // Inline worker script as a blob for multithreading.
       const workerScript = `
         self.onmessage = function(ev) {
           const { start, end, secret, difficulty, reportEvery } = ev.data;
-          function leadingZeroBitsFromHex(hex) {
-            let bits = 0;
-            const s = hex.toLowerCase();
-            for (let i = 0; i < s.length; i++) {
-              const c = s.charCodeAt(i);
-              let nibble;
-              if (c >= 48 && c <= 57) { nibble = c - 48; } else { nibble = 10 + (c - 97); }
-              if (nibble === 0) { bits += 4; continue; }
-              if (nibble < 2) { bits += 3; }
-              else if (nibble < 4) { bits += 2; }
-              else if (nibble < 8) { bits += 1; }
-              break;
-            }
-            return bits;
-          }
-          function hashHexString32(str) {
-            return self.hashHexString32(str);
-          }
           let processed = 0;
           let lastHex = '';
           for (let nonce = start; nonce <= end; nonce++) {
-            const hex = hashHexString32(nonce.toString() + secret);
+            const hex = Blake3.hashHexString32(nonce.toString() + secret);
             lastHex = hex;
-            const leading = leadingZeroBitsFromHex(hex);
+            const leading = Blake3.leadingZeroBitsFromHex(hex);
             if (leading >= difficulty) {
               self.postMessage({ type: 'found', nonce, hex });
               return;
@@ -270,8 +253,7 @@ class Blake3 {
       `;
       function createPowWorker(opts) {
         const blob = new Blob([
-          'self.hashHexString32 = ' + Blake3.hashHexString32.toString() + ';',
-          workerScript
+          `importScripts('Blake3_Pow.js');\n` + workerScript
         ], { type: 'application/javascript' });
         return new Worker(URL.createObjectURL(blob));
       }
