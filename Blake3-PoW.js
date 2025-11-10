@@ -215,55 +215,31 @@ class Blake3 {
       const maxNonce = Blake3.computeMaxNonce(difficulty);
       const reportEvery = Blake3.computeChunkSize(difficulty);
       ui.dbgRange.textContent = `(0,${maxNonce.toLocaleString()})`;
-      const threads = Math.max(2, Math.min((navigator.hardwareConcurrency || 4), 16));
-      const rangeSize = maxNonce + 1;
-      const perThread = Math.ceil(rangeSize / threads);
       let totalProcessed = 0;
-      let workersCompleted = 0;
       let miningStopped = false;
-      let workers = [];
-      function terminateAll() {
-        workers.forEach(w => { try { w.terminate(); } catch (_) {} });
+      function progressCb({ done, lastHex }) {
+        totalProcessed += done || 0;
+        lastHexCandidate = lastHex || lastHexCandidate;
+        const pct = Math.floor((totalProcessed / (maxNonce + 1)) * 100);
+        progressPercent = Math.max(progressPercent, pct);
+        ui.progress.style.width = `${progressPercent}%`;
+        if (!solvedNonce && lastHexCandidate) {
+          ui.dbgHashCurrent.textContent = lastHexCandidate;
+        }
       }
-      for (let t = 0; t < threads; t++) {
-        const start = t * perThread;
-        const end = Math.min(maxNonce, (t + 1) * perThread - 1);
-        if (start > end) break;
-        const w = new Worker('https://cdn.jsdelivr.net/gh/libalpm64/Blake3-JS@refs/heads/main/pow_worker.js');
-        workers.push(w);
-        w.onmessage = async (ev) => {
-          const msg = ev.data || {};
-          if (msg.type === 'progress') {
-            totalProcessed += msg.done || 0;
-            lastHexCandidate = msg.lastHex || lastHexCandidate;
-            const pct = Math.floor((totalProcessed / rangeSize) * 100);
-            progressPercent = Math.max(progressPercent, pct);
-            ui.progress.style.width = `${progressPercent}%`;
-            if (!solvedNonce && lastHexCandidate) {
-              ui.dbgHashCurrent.textContent = lastHexCandidate;
-            }
-          } else if (msg.type === 'found' && !solvedNonce) {
-            solvedNonce = String(msg.nonce);
-            const hex = msg.hex;
-            const hashTime = (Date.now() - startTime) / 1000;
-            ui.status.textContent = `Found solution in ${hashTime}s! Verifying...`;
-            ui.progress.style.width = '100%';
-            ui.dbgHash.textContent = hex;
-            ui.dbgHashCurrent.textContent = hex;
-            miningStopped = true;
-            terminateAll();
-            await verifyChallenge(solvedNonce);
-          } else if (msg.type === 'done') {
-            workersCompleted++;
-            if (workersCompleted === workers.length && !solvedNonce) {
-              ui.status.textContent = 'No solution found within range. Refresh to try again.';
-            }
-          }
-        };
-        w.onerror = (err) => {
-          console.error('Worker error:', err);
-        };
-        w.postMessage({ start, end, secret: challengeSecret, difficulty, reportEvery });
+      const result = Blake3.minePowRange(0, maxNonce, challengeSecret, difficulty, reportEvery, progressCb);
+      if (result) {
+        solvedNonce = String(result.nonce);
+        const hex = result.hex;
+        const hashTime = (Date.now() - startTime) / 1000;
+        ui.status.textContent = `Found solution in ${hashTime}s! Verifying...`;
+        ui.progress.style.width = '100%';
+        ui.dbgHash.textContent = hex;
+        ui.dbgHashCurrent.textContent = hex;
+        miningStopped = true;
+        verifyChallenge(solvedNonce);
+      } else {
+        ui.status.textContent = 'No solution found within range. Refresh to try again.';
       }
       async function verifyChallenge(nonce) {
         try {
