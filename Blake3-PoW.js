@@ -207,6 +207,18 @@ class Blake3 {
     let startTime = Date.now();
     let progressPercent = 0;
     let lastHexCandidate = '';
+    
+    if (!ui.status) {
+      console.warn('UI elements not found, creating minimal fallback UI');
+      ui.status = { textContent: (text) => console.log('Status:', text) };
+      ui.progress = { style: { width: '0%' } };
+      ui.dbgDifficulty = { textContent: (text) => {} };
+      ui.dbgRange = { textContent: (text) => {} };
+      ui.dbgHash = { textContent: (text) => {} };
+      ui.dbgHashCurrent = { textContent: (text) => {} };
+      ui.dbgSalt = { textContent: (text) => {} };
+    }
+    
     ui.dbgDifficulty.textContent = String(difficulty);
     ui.dbgSalt.textContent = challengeSecret;
     ui.status.textContent = 'Loading crypto library...';
@@ -223,7 +235,7 @@ class Blake3 {
         const pct = Math.floor((totalProcessed / (maxNonce + 1)) * 100);
         progressPercent = Math.max(progressPercent, pct);
         ui.progress.style.width = `${progressPercent}%`;
-        if (!solvedNonce && lastHexCandidate) {
+        if (!solvedNonce && lastHexCandidate && ui.dbgHashCurrent) {
           ui.dbgHashCurrent.textContent = lastHexCandidate;
         }
       }
@@ -232,42 +244,42 @@ class Blake3 {
         solvedNonce = String(result.nonce);
         const hex = result.hex;
         const hashTime = (Date.now() - startTime) / 1000;
-        ui.status.textContent = `Found solution in ${hashTime}s! Verifying...`;
-        ui.progress.style.width = '100%';
-        ui.dbgHash.textContent = hex;
-        ui.dbgHashCurrent.textContent = hex;
+        if (ui.status) ui.status.textContent = `Found solution in ${hashTime}s! Verifying...`;
+        if (ui.progress && ui.progress.style) ui.progress.style.width = '100%';
+        if (ui.dbgHash) ui.dbgHash.textContent = hex;
+        if (ui.dbgHashCurrent) ui.dbgHashCurrent.textContent = hex;
         miningStopped = true;
         verifyChallenge(solvedNonce);
       } else {
-        ui.status.textContent = 'No solution found within range. Refresh to try again.';
+        if (ui.status) ui.status.textContent = 'No solution found within range. Refresh to try again.';
       }
       async function verifyChallenge(nonce) {
         try {
           const response = await fetch('/pow/validate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              nonce: nonce, 
-              challenge_secret: challengeSecret 
+            body: JSON.stringify({
+              nonce: nonce,
+              challenge_secret: challengeSecret
             })
           });
           const result = await response.json();
           if (response.ok && result.verified) {
-            ui.status.textContent = 'Verification successful. Redirecting...';
+            if (ui.status) ui.status.textContent = 'Verification successful. Redirecting...';
             setTimeout(() => window.location.reload(), 3000);
           } else {
-            ui.status.textContent = 'Verification failed. Please try again.';
+            if (ui.status) ui.status.textContent = 'Verification failed. Please try again.';
             setTimeout(() => location.reload(), 3000);
           }
         } catch (error) {
           console.error('Verification error:', error);
-          ui.status.textContent = 'An error occurred. Please try again.';
+          if (ui.status) ui.status.textContent = 'An error occurred. Please try again.';
           setTimeout(() => location.reload(), 3000);
         }
       }
     } catch (err) {
       console.error('Failed to load Blake3.js:', err);
-      ui.status.textContent = 'Failed to load crypto library. Please refresh.';
+      if (ui.status) ui.status.textContent = 'Failed to load crypto library. Please refresh.';
     }
   }
 }
