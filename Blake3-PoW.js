@@ -255,6 +255,7 @@ class Blake3 {
       }
       async function verifyChallenge(nonce) {
         try {
+          console.log('Sending verification request with nonce:', nonce);
           const response = await fetch('/pow/validate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -263,11 +264,21 @@ class Blake3 {
               challenge_secret: challengeSecret
             })
           });
+          console.log('Response status:', response.status, 'OK:', response.ok);
           const result = await response.json();
+          console.log('Verification result:', result);
+          
           if (response.ok && result.verified) {
-            if (ui.status) ui.status.textContent = 'Verification successful. Redirecting...';
-            setTimeout(() => window.location.reload(), 3000);
+            if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
+            setTimeout(() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                window.location.href = '/';
+              }
+            }, 2000);
           } else {
+            console.error('Verification failed:', result);
             if (ui.status) ui.status.textContent = 'Verification failed. Please try again.';
             setTimeout(() => location.reload(), 3000);
           }
