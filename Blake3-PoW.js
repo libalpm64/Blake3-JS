@@ -274,10 +274,32 @@ class Blake3 {
           })
         });
         console.log('Response status:', response.status, 'OK:', response.ok);
+        console.log('Response content type:', response.headers.get('content-type'));
         
         if (response.ok) {
-          if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
-          console.log('PoW challenge completed, page will auto-reload...');
+          const contentType = response.headers.get('content-type') || '';
+          
+          if (contentType.includes('application/json')) {
+            const result = await response.json();
+            console.log('Verification result:', result);
+            
+            if (result.verified) {
+              if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
+              setTimeout(() => {
+                console.log('Refreshing to use the new cookie...');
+                const url = new URL(window.location.href);
+                url.searchParams.set('_t', Date.now());
+                window.location.replace(url.toString());
+              }, 2000);
+            } else {
+              console.error('Verification failed:', result);
+              if (ui.status) ui.status.textContent = 'Verification failed. Please try again.';
+              setTimeout(() => location.reload(), 3000);
+            }
+          } else {
+            if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
+            console.log('PoW challenge completed, page will auto-reload...');
+          }
         } else {
           console.error('Verification failed');
           if (ui.status) ui.status.textContent = 'Verification failed. Please try again.';
