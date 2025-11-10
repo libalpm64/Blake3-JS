@@ -155,7 +155,7 @@ class Blake3 {
     return bits;
   }
 
-  static minePowRange(start, end, secret, difficulty, reportEvery = 1000, progressCb = null) {
+  static async minePowRange(start, end, secret, difficulty, reportEvery = 1000, progressCb = null) {
     let processed = 0;
     let lastHex = '';
     for (let nonce = start; nonce <= end; nonce++) {
@@ -168,6 +168,7 @@ class Blake3 {
       processed++;
       if (progressCb && processed % reportEvery === 0) {
         progressCb({ done: reportEvery, lastHex });
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
     const remainder = processed % reportEvery;
@@ -193,7 +194,7 @@ class Blake3 {
     return [...hash].map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  static startPowChallenge({challengeSecret, difficulty}) {
+  static async startPowChallenge({challengeSecret, difficulty}) {
     const ui = {
       status: document.getElementById('status'),
       progress: document.getElementById('progress'),
@@ -203,10 +204,6 @@ class Blake3 {
       dbgHashCurrent: document.getElementById('dbg-hash-current'),
       dbgSalt: document.getElementById('dbg-salt'),
     };
-    let solvedNonce = null;
-    let startTime = Date.now();
-    let progressPercent = 0;
-    let lastHexCandidate = '';
     
     if (!ui.status) {
       console.warn('UI elements not found, creating minimal fallback UI');
@@ -219,78 +216,83 @@ class Blake3 {
       ui.dbgSalt = { textContent: (text) => {} };
     }
     
+    let startTime = Date.now();
+    let progressPercent = 0;
+    let lastHexCandidate = '';
+    let totalProcessed = 0;
+    
     ui.dbgDifficulty.textContent = String(difficulty);
     ui.dbgSalt.textContent = challengeSecret;
     ui.status.textContent = 'Loading crypto library...';
+    
     try {
       ui.status.textContent = 'Mining...';
       const maxNonce = Blake3.computeMaxNonce(difficulty);
       const reportEvery = Blake3.computeChunkSize(difficulty);
       ui.dbgRange.textContent = `(0,${maxNonce.toLocaleString()})`;
-      let totalProcessed = 0;
-      let miningStopped = false;
+      
       function progressCb({ done, lastHex }) {
         totalProcessed += done || 0;
         lastHexCandidate = lastHex || lastHexCandidate;
         const pct = Math.floor((totalProcessed / (maxNonce + 1)) * 100);
         progressPercent = Math.max(progressPercent, pct);
-        ui.progress.style.width = `${progressPercent}%`;
-        if (!solvedNonce && lastHexCandidate && ui.dbgHashCurrent) {
+        if (ui.progress) ui.progress.style.width = `${progressPercent}%`;
+        if (lastHexCandidate && ui.dbgHashCurrent) {
           ui.dbgHashCurrent.textContent = lastHexCandidate;
         }
       }
-      const result = Blake3.minePowRange(0, maxNonce, challengeSecret, difficulty, reportEvery, progressCb);
+      
+      const result = await Blake3.minePowRange(0, maxNonce, challengeSecret, difficulty, reportEvery, progressCb);
+      
       if (result) {
-        solvedNonce = String(result.nonce);
+        const solvedNonce = String(result.nonce);
         const hex = result.hex;
         const hashTime = (Date.now() - startTime) / 1000;
         if (ui.status) ui.status.textContent = `Found solution in ${hashTime}s! Verifying...`;
-        if (ui.progress && ui.progress.style) ui.progress.style.width = '100%';
+        if (ui.progress) ui.progress.style.width = '100%';
         if (ui.dbgHash) ui.dbgHash.textContent = hex;
         if (ui.dbgHashCurrent) ui.dbgHashCurrent.textContent = hex;
-        miningStopped = true;
-        verifyChallenge(solvedNonce);
+        
+        await verifyChallenge(solvedNonce);
       } else {
         if (ui.status) ui.status.textContent = 'No solution found within range. Refresh to try again.';
-      }
-      async function verifyChallenge(nonce) {
-        try {
-          console.log('Sending verification request with nonce:', nonce);
-          const response = await fetch('/pow/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              nonce: nonce,
-              challenge_secret: challengeSecret
-            })
-          });
-          console.log('Response status:', response.status, 'OK:', response.ok);
-          const result = await response.json();
-          console.log('Verification result:', result);
-          
-          if (response.ok && result.verified) {
-            if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
-            setTimeout(() => {
-              if (window.history.length > 1) {
-                window.history.back();
-              } else {
-                window.location.href = '/';
-              }
-            }, 2000);
-          } else {
-            console.error('Verification failed:', result);
-            if (ui.status) ui.status.textContent = 'Verification failed. Please try again.';
-            setTimeout(() => location.reload(), 3000);
-          }
-        } catch (error) {
-          console.error('Verification error:', error);
-          if (ui.status) ui.status.textContent = 'An error occurred. Please try again.';
-          setTimeout(() => location.reload(), 3000);
-        }
       }
     } catch (err) {
       console.error('Failed to load Blake3.js:', err);
       if (ui.status) ui.status.textContent = 'Failed to load crypto library. Please refresh.';
+    }
+    
+    async function verifyChallenge(nonce) {
+      try {
+        console.log('Sending verification request with nonce:', nonce);
+        const response = await fetch('/pow/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nonce: nonce,
+            challenge_secret: challengeSecret
+          })
+        });
+        console.log('Response status:', response.status, 'OK:', response.ok);
+        const result = await response.json();
+        console.log('Verification result:', result);
+        
+        if (response.ok && result.verified) {
+          if (ui.status) ui.status.textContent = 'Verification successful! Challenge completed.';
+          setTimeout(() => {
+            console.log('Reloading page to use the new cookie...');
+            window.location.reload();
+          }, 2000);
+        } else {
+          console.error('Verification failed:', result);
+          if (ui.status) ui.status.textContent = 'Verification failed. Please try again.';
+          setTimeout(() => location.reload(), 3000);
+        }
+      } catch (error) {
+        console.error('Verification error:', error);
+        if (ui.status) ui.status.textContent = 'An error occurred. Please try again.';
+        setTimeout(() => location.reload(), 3000);
+      }
     }
   }
 }
